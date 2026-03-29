@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>קביעת פגישה - מכללת ספיר</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo">
+    <img src="https://www.sapir.ac.il/sites/default/files/styles/main_mobile/public/2023-12/sapir_logo.png" alt="ספיר" onerror="this.style.display='none'">
+    <span>מכללת ספיר</span>
+  </div>
+  <div class="header-user">
+    <span class="user-name" id="user-name"></span>
+    <a href="/auth/logout" class="btn-logout">התנתק</a>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- Current booking banner -->
+  <div id="booking-banner" class="booking-banner" style="display:none;">
+    <div class="booking-info">
+      <div>הפגישה שלך:</div>
+      <strong id="banner-slot-text"></strong>
+    </div>
+    <div class="booking-actions">
+      <button class="btn btn-primary" onclick="startReschedule()">שינוי מועד</button>
+      <button class="btn btn-danger" onclick="confirmCancel()">ביטול פגישה</button>
+    </div>
+  </div>
+
+  <!-- Reschedule mode banner -->
+  <div id="reschedule-banner" class="reschedule-mode-banner" style="display:none;">
+    <span>בחר/י מועד חדש לפגישה</span>
+    <button class="btn btn-secondary" onclick="cancelReschedule()">ביטול</button>
+  </div>
+
+  <h2 class="section-title">מועדים פנויים – אפריל 2026</h2>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#e8f5e9;border:1.5px solid #81c784;"></div>
+      <span>פנוי לקביעה</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#fff9c4;border:1.5px solid #F5C800;"></div>
+      <span>הפגישה שלי</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#f5f5f5;border:1.5px solid #ddd;"></div>
+      <span>לא זמין</span>
+    </div>
+  </div>
+
+  <div id="calendar" class="calendar-grid">
+    <div class="empty-state">טוען...</div>
+  </div>
+
+</main>
+
+<!-- Confirmation modal -->
+<div id="modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">אישור קביעת פגישה</h3>
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="modal-confirm">אישור</button>
+      <button class="btn btn-secondary" onclick="closeModal()">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+  let currentUser = null;
+  let myBooking = null;
+  let allSlots = [];
+  let rescheduleMode = false;
+  let pendingSlotId = null;
+
+  const HEBREW_DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+  function formatDateHe(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const dayName = HEBREW_DAYS[d.getDay()];
+    return `${dayName}, ${d.getDate()} ב${HEBREW_MONTHS[d.getMonth()]}`;
+  }
+
+  function formatTime(t) {
+    return t.substring(0, 5);
+  }
+
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type;
+    setTimeout(() => t.classList.add('show'), 10);
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('active');
+    pendingSlotId = null;
+  }
+
+  async function loadData() {
+    const [userRes, slotsRes, bookingRes] = await Promise.all([
+      fetch('/api/me'),
+      fetch('/api/slots/available'),
+      fetch('/api/bookings/my'),
+    ]);
+
+    currentUser = await userRes.json();
+    if (!currentUser) { location.href = '/'; return; }
+    if (currentUser.role === 'lecturer') { location.href = '/lecturer.html'; return; }
+
+    document.getElementById('user-name').textContent = currentUser.name;
+
+    const available = await slotsRes.json();
+    myBooking = await bookingRes.json();
+
+    // Merge: available slots + my booking slot (normalized to slot shape)
+    if (myBooking) {
+      // Add my booked slot to the list (it won't be in available since it's booked)
+      const bookedSlot = { id: myBooking.slot_id, date: myBooking.date, start_time: myBooking.start_time };
+      allSlots = [...available, bookedSlot];
+    } else {
+      allSlots = available;
+    }
+
+    renderBanner();
+    renderCalendar();
+  }
+
+  function renderBanner() {
+    const banner = document.getElementById('booking-banner');
+    if (myBooking) {
+      banner.style.display = 'flex';
+      document.getElementById('banner-slot-text').textContent =
+        `${formatDateHe(myBooking.date)} בשעה ${formatTime(myBooking.start_time)}`;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  function renderCalendar() {
+    const container = document.getElementById('calendar');
+
+    // Group slots by date
+    const byDate = {};
+    for (const s of allSlots) {
+      if (!byDate[s.date]) byDate[s.date] = [];
+      byDate[s.date].push(s);
+    }
+
+    const dates = Object.keys(byDate).sort();
+
+    if (!dates.length) {
+      container.innerHTML = '<div class="empty-state">אין מועדים פנויים כרגע</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    for (const date of dates) {
+      const slots = byDate[date].sort((a, b) => a.start_time.localeCompare(b.start_time));
+      const dayEl = document.createElement('div');
+      dayEl.className = 'calendar-day';
+      dayEl.innerHTML = `<div class="day-header">${formatDateHe(date)}</div><div class="slots-list"></div>`;
+      const list = dayEl.querySelector('.slots-list');
+
+      for (const slot of slots) {
+        const btn = document.createElement('button');
+        // slot.id is slot_id; myBooking.slot_id is the booked slot's id
+        const isMySlot = myBooking && myBooking.slot_id === slot.id;
+
+        if (isMySlot) {
+          btn.className = 'slot-btn slot-booked-mine';
+          btn.textContent = `${formatTime(slot.start_time)} ✓`;
+          btn.disabled = true;
+        } else {
+          btn.className = 'slot-btn slot-available';
+          btn.textContent = formatTime(slot.start_time);
+          btn.onclick = () => handleSlotClick(slot.id, date, slot.start_time);
+        }
+
+        list.appendChild(btn);
+      }
+
+      container.appendChild(dayEl);
+    }
+  }
+
+  function handleSlotClick(slotId, date, time) {
+    if (rescheduleMode) {
+      pendingSlotId = slotId;
+      const modal = document.getElementById('modal');
+      document.getElementById('modal-title').textContent = 'אישור שינוי מועד';
+      document.getElementById('modal-text').textContent =
+        `האם לשנות את הפגישה למועד ${formatDateHe(date)} בשעה ${formatTime(time)}?`;
+      document.getElementById('modal-confirm').onclick = doReschedule;
+      modal.classList.add('active');
+    } else if (!myBooking) {
+      pendingSlotId = slotId;
+      const modal = document.getElementById('modal');
+      document.getElementById('modal-title').textContent = 'אישור קביעת פגישה';
+      document.getElementById('modal-text').textContent =
+        `האם לקבוע פגישה ל${formatDateHe(date)} בשעה ${formatTime(time)}?`;
+      document.getElementById('modal-confirm').onclick = doBook;
+      modal.classList.add('active');
+    }
+  }
+
+  async function doBook() {
+    closeModal();
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slot_id: pendingSlotId }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        showToast(e.error || 'שגיאה בקביעת פגישה', 'error');
+        return;
+      }
+      showToast('הפגישה נקבעה בהצלחה!', 'success');
+      await loadData();
+    } catch {
+      showToast('שגיאת רשת', 'error');
+    }
+  }
+
+  async function doReschedule() {
+    closeModal();
+    try {
+      const res = await fetch('/api/bookings/reschedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_slot_id: pendingSlotId }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        showToast(e.error || 'שגיאה בשינוי מועד', 'error');
+        return;
+      }
+      rescheduleMode = false;
+      document.getElementById('reschedule-banner').style.display = 'none';
+      showToast('מועד הפגישה שונה בהצלחה!', 'success');
+      await loadData();
+    } catch {
+      showToast('שגיאת רשת', 'error');
+    }
+  }
+
+  function startReschedule() {
+    rescheduleMode = true;
+    document.getElementById('reschedule-banner').style.display = 'flex';
+    showToast('בחר/י מועד חדש בלוח');
+  }
+
+  function cancelReschedule() {
+    rescheduleMode = false;
+    document.getElementById('reschedule-banner').style.display = 'none';
+  }
+
+  function confirmCancel() {
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').textContent = 'ביטול פגישה';
+    document.getElementById('modal-text').textContent = 'האם אתה בטוח שברצונך לבטל את הפגישה?';
+    document.getElementById('modal-confirm').onclick = doCancel;
+    modal.classList.add('active');
+  }
+
+  async function doCancel() {
+    closeModal();
+    try {
+      const res = await fetch('/api/bookings/my', { method: 'DELETE' });
+      if (!res.ok) {
+        const e = await res.json();
+        showToast(e.error || 'שגיאה בביטול', 'error');
+        return;
+      }
+      myBooking = null;
+      showToast('הפגישה בוטלה', 'success');
+      await loadData();
+    } catch {
+      showToast('שגיאת רשת', 'error');
+    }
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  loadData();
+</script>
+</body>
+</html>

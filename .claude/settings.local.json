@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/server.js)",
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/db.js)",
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/auth.js)",
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/email.js)",
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/routes/slots.js)",
+      "Bash(node --check /Users/nivsadovsky/Desktop/AI/OfirSchedule/routes/bookings.js)",
+      "Bash(psql --version)",
+      "Bash(node --version)",
+      "Bash(npm --version)"
+    ]
+  }
+}

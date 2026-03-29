@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>לוח מרצה - מכללת ספיר</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo">
+    <img src="https://www.sapir.ac.il/sites/default/files/styles/main_mobile/public/2023-12/sapir_logo.png" alt="ספיר" onerror="this.style.display='none'">
+    <span>מכללת ספיר – מרצה</span>
+  </div>
+  <div class="header-user">
+    <span class="user-name" id="user-name"></span>
+    <a href="/auth/logout" class="btn-logout">התנתק</a>
+  </div>
+</header>
+
+<main class="main">
+
+  <div class="dashboard-grid">
+
+    <!-- Left column: Calendar -->
+    <div>
+      <h2 class="section-title">לוח שעות – אפריל 2026</h2>
+
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#e8f5e9;border:1.5px solid #81c784;"></div>
+          <span>פנוי</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#e3f2fd;border:1.5px solid #64b5f6;"></div>
+          <span>נקבע</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#f5f5f5;border:1.5px solid #ddd;"></div>
+          <span>לא זמין</span>
+        </div>
+      </div>
+
+      <div id="calendar" class="calendar-grid">
+        <div class="empty-state">טוען...</div>
+      </div>
+    </div>
+
+    <!-- Right column: Actions + Bookings list -->
+    <div>
+
+      <!-- Add slot panel -->
+      <div class="panel">
+        <h2 class="section-title">הוספת מועד חדש</h2>
+        <form class="add-slot-form" id="add-slot-form">
+          <div class="form-group">
+            <label for="slot-date">תאריך</label>
+            <input type="date" id="slot-date" required min="2026-04-01" max="2026-12-31">
+          </div>
+          <div class="form-group">
+            <label for="slot-time">שעה</label>
+            <select id="slot-time" required>
+              <option value="">בחר שעה</option>
+              <option value="08:00">08:00</option>
+              <option value="09:00">09:00</option>
+              <option value="10:00">10:00</option>
+              <option value="11:00">11:00</option>
+              <option value="12:00">12:00</option>
+              <option value="13:00">13:00</option>
+              <option value="14:00">14:00</option>
+              <option value="15:00">15:00</option>
+              <option value="16:00">16:00</option>
+              <option value="17:00">17:00</option>
+              <option value="18:00">18:00</option>
+              <option value="19:00">19:00</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">הוסף מועד</button>
+        </form>
+      </div>
+
+      <!-- Bookings list panel -->
+      <div class="panel">
+        <h2 class="section-title">פגישות שנקבעו</h2>
+        <div id="bookings-list">
+          <div class="empty-state">טוען...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<!-- Confirm toggle modal -->
+<div id="modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="modal-confirm">אישור</button>
+      <button class="btn btn-secondary" onclick="closeModal()">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+  const HEBREW_DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+  function formatDateHe(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const dayName = HEBREW_DAYS[d.getDay()];
+    return `${dayName}, ${d.getDate()} ב${HEBREW_MONTHS[d.getMonth()]}`;
+  }
+
+  function formatTime(t) { return t.substring(0, 5); }
+
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type;
+    setTimeout(() => t.classList.add('show'), 10);
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('active');
+  }
+
+  document.getElementById('modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  async function loadData() {
+    const [userRes, slotsRes, bookingsRes] = await Promise.all([
+      fetch('/api/me'),
+      fetch('/api/slots/all'),
+      fetch('/api/bookings/all'),
+    ]);
+
+    const user = await userRes.json();
+    if (!user) { location.href = '/'; return; }
+    if (user.role !== 'lecturer') { location.href = '/index.html'; return; }
+    document.getElementById('user-name').textContent = user.name;
+
+    const slots = await slotsRes.json();
+    const bookings = await bookingsRes.json();
+
+    renderCalendar(slots);
+    renderBookingsList(bookings);
+  }
+
+  function renderCalendar(slots) {
+    const container = document.getElementById('calendar');
+    if (!slots.length) {
+      container.innerHTML = '<div class="empty-state">אין מועדים</div>';
+      return;
+    }
+
+    // Group by date
+    const byDate = {};
+    for (const s of slots) {
+      if (!byDate[s.date]) byDate[s.date] = [];
+      byDate[s.date].push(s);
+    }
+
+    const dates = Object.keys(byDate).sort();
+    container.innerHTML = '';
+
+    for (const date of dates) {
+      const daySlots = byDate[date].sort((a, b) => a.start_time.localeCompare(b.start_time));
+      const dayEl = document.createElement('div');
+      dayEl.className = 'calendar-day';
+      dayEl.innerHTML = `<div class="day-header">${formatDateHe(date)}</div><div class="slots-list"></div>`;
+      const list = dayEl.querySelector('.slots-list');
+
+      for (const slot of daySlots) {
+        const btn = document.createElement('button');
+        const timeText = formatTime(slot.start_time);
+
+        if (!slot.is_available) {
+          btn.className = 'slot-btn slot-lecturer-unavailable';
+          btn.title = 'לחץ להפעלה מחדש';
+          btn.innerHTML = `${timeText} <span style="font-size:0.75em">✗</span>`;
+          btn.onclick = () => confirmToggle(slot.id, false);
+        } else if (slot.booking_id) {
+          btn.className = 'slot-btn slot-lecturer-booked';
+          btn.title = slot.student_name + '\n' + slot.student_email;
+          btn.innerHTML = `${timeText}<br><small>${slot.student_name}</small>`;
+        } else {
+          btn.className = 'slot-btn slot-lecturer-available';
+          btn.title = 'לחץ לביטול מועד';
+          btn.textContent = timeText;
+          btn.onclick = () => confirmToggle(slot.id, true);
+        }
+
+        list.appendChild(btn);
+      }
+
+      container.appendChild(dayEl);
+    }
+  }
+
+  function confirmToggle(slotId, isCurrentlyAvailable) {
+    const modal = document.getElementById('modal');
+    if (isCurrentlyAvailable) {
+      document.getElementById('modal-title').textContent = 'ביטול מועד';
+      document.getElementById('modal-text').textContent = 'האם לסמן מועד זה כלא זמין?';
+    } else {
+      document.getElementById('modal-title').textContent = 'שחזור מועד';
+      document.getElementById('modal-text').textContent = 'האם להפעיל מחדש את המועד?';
+    }
+    document.getElementById('modal-confirm').onclick = () => toggleSlot(slotId);
+    modal.classList.add('active');
+  }
+
+  async function toggleSlot(slotId) {
+    closeModal();
+    try {
+      const res = await fetch(`/api/slots/${slotId}/toggle`, { method: 'PATCH' });
+      if (!res.ok) {
+        showToast('שגיאה בעדכון המועד', 'error');
+        return;
+      }
+      showToast('המועד עודכן', 'success');
+      await loadData();
+    } catch {
+      showToast('שגיאת רשת', 'error');
+    }
+  }
+
+  function renderBookingsList(bookings) {
+    const container = document.getElementById('bookings-list');
+    if (!bookings.length) {
+      container.innerHTML = '<div class="empty-state">אין פגישות שנקבעו</div>';
+      return;
+    }
+
+    let html = `<table class="bookings-table">
+      <thead>
+        <tr>
+          <th>תאריך</th>
+          <th>שעה</th>
+          <th>שם סטודנט</th>
+          <th>אימייל</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    for (const b of bookings) {
+      html += `<tr>
+        <td>${formatDateHe(b.date)}</td>
+        <td>${formatTime(b.start_time)}</td>
+        <td>${b.student_name}</td>
+        <td style="direction:ltr;text-align:left;">${b.student_email}</td>
+      </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  // Add slot form
+  document.getElementById('add-slot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const date = document.getElementById('slot-date').value;
+    const start_time = document.getElementById('slot-time').value;
+    if (!date || !start_time) return;
+
+    try {
+      const res = await fetch('/api/slots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, start_time }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        showToast(e.error || 'שגיאה בהוספת מועד', 'error');
+        return;
+      }
+      showToast('מועד חדש נוסף!', 'success');
+      e.target.reset();
+      await loadData();
+    } catch {
+      showToast('שגיאת רשת', 'error');
+    }
+  });
+
+  loadData();
+</script>
+</body>
+</html>
