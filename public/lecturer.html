@@ -113,7 +113,7 @@
   const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
   function formatDateHe(dateStr) {
-    const d = new Date(dateStr + 'T12:00:00');
+    const d = new Date(String(dateStr).substring(0, 10) + 'T12:00:00');
     const dayName = HEBREW_DAYS[d.getDay()];
     return `${dayName}, ${d.getDate()} ב${HEBREW_MONTHS[d.getMonth()]}`;
   }
