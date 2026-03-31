@@ -130,4 +130,25 @@ async function sendRescheduleConfirmation({ student, oldSlot, newSlot }) {
   });
 }
 
-module.exports = { sendBookingConfirmation, sendCancellationConfirmation, sendRescheduleConfirmation };
+async function sendBroadcast({ students, message, subject }) {
+  const courseName = await getCourseName();
+  const emailSubject = subject || `הודעה מהמרצה – ${courseName}`;
+
+  for (const student of students) {
+    await transporter.sendMail({
+      from: `"${courseName}" <${process.env.GMAIL_USER}>`,
+      to: student.email,
+      subject: emailSubject,
+      html: `
+        <div dir="rtl" style="font-family: Arial, sans-serif;">
+          <h2 style="color: #1B2A6B;">הודעה מהמרצה</h2>
+          <p>שלום ${student.name},</p>
+          <div style="white-space: pre-line; padding: 12px; background: #f5f5f5; border-radius: 6px; margin: 12px 0;">${message}</div>
+          <p style="color: #1B2A6B; font-weight: bold;">מכללת ספיר – ${courseName}</p>
+        </div>
+      `,
+    });
+  }
+}
+
+module.exports = { sendBookingConfirmation, sendCancellationConfirmation, sendRescheduleConfirmation, sendBroadcast };

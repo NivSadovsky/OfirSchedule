@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { sendBookingConfirmation, sendCancellationConfirmation, sendRescheduleConfirmation } = require('../email');
+const { sendBookingConfirmation, sendCancellationConfirmation, sendRescheduleConfirmation, sendBroadcast } = require('../email');
 
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -196,6 +196,25 @@ router.post('/reschedule', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
+  }
+});
+
+// Broadcast message to all booked students (lecturer only)
+router.post('/broadcast', requireAuth, requireLecturer, async (req, res) => {
+  const { message, subject } = req.body;
+  if (!message || !message.trim()) return res.status(400).json({ error: 'Missing message' });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT u.name, u.email FROM bookings b JOIN users u ON u.id = b.user_id`
+    );
+    if (!rows.length) return res.status(404).json({ error: 'No booked students' });
+
+    await sendBroadcast({ students: rows, message: message.trim(), subject: subject?.trim() });
+    res.json({ success: true, sent: rows.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

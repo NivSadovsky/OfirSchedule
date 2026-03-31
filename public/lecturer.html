@@ -86,6 +86,24 @@
 
   </div>
 
+  <!-- Broadcast panel -->
+  <div class="panel" style="margin-bottom: 24px;">
+    <h2 class="section-title">📧 הודעה לכל הסטודנטים</h2>
+    <form id="broadcast-form" class="add-slot-form">
+      <div class="form-group">
+        <label for="broadcast-subject">נושא המייל (אופציונלי)</label>
+        <input type="text" id="broadcast-subject" placeholder="לדוגמה: קישור לזום לפגישות">
+      </div>
+      <div class="form-group">
+        <label for="broadcast-message">תוכן ההודעה</label>
+        <textarea id="broadcast-message" rows="4" required
+          style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;"
+          placeholder="לדוגמה: שלום, קישור הזום לפגישות שלנו: https://zoom.us/j/..."></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">📤 שלח לכל הסטודנטים</button>
+    </form>
+  </div>
+
   <div class="dashboard-grid">
 
     <!-- Left column: Calendar -->
@@ -417,6 +435,36 @@
     } catch {
       showToast('שגיאת רשת', 'error');
     }
+  });
+
+  document.getElementById('broadcast-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = document.getElementById('broadcast-message').value.trim();
+    const subject = document.getElementById('broadcast-subject').value.trim();
+    if (!message) return;
+
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').textContent = 'אישור שליחת הודעה';
+    document.getElementById('modal-text').textContent = 'האם לשלוח את ההודעה לכל הסטודנטים שקבעו פגישה?';
+    document.getElementById('modal-confirm').onclick = async () => {
+      closeModal();
+      try {
+        const res = await fetch('/api/bookings/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, subject }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.error === 'No booked students' ? 'אין סטודנטים עם פגישות רשומות' : 'שגיאה בשליחה', 'error');
+          return;
+        }
+        const data = await res.json();
+        showToast(`ההודעה נשלחה ל-${data.sent} סטודנטים!`, 'success');
+        e.target.reset();
+      } catch { showToast('שגיאת רשת', 'error'); }
+    };
+    modal.classList.add('active');
   });
 
   loadData();
