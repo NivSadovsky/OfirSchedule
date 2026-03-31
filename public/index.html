@@ -218,12 +218,13 @@
   }
 
   async function doBook() {
+    const slotId = pendingSlotId;
     closeModal();
     try {
       const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot_id: pendingSlotId }),
+        body: JSON.stringify({ slot_id: slotId }),
       });
       if (!res.ok) {
         const e = await res.json();
@@ -238,12 +239,13 @@
   }
 
   async function doReschedule() {
+    const slotId = pendingSlotId;
     closeModal();
     try {
       const res = await fetch('/api/bookings/reschedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_slot_id: pendingSlotId }),
+        body: JSON.stringify({ new_slot_id: slotId }),
       });
       if (!res.ok) {
         const e = await res.json();
