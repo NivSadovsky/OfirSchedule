@@ -21,6 +21,71 @@
 
 <main class="main">
 
+  <!-- Admin panels -->
+  <div class="dashboard-grid" style="margin-bottom: 24px;">
+
+    <!-- New course setup -->
+    <div class="panel">
+      <h2 class="section-title">⚙️ הגדרת קורס / סבב חדש</h2>
+      <form id="setup-form" class="add-slot-form">
+        <div class="form-group">
+          <label for="setup-course-name">שם הקורס / הפגישה</label>
+          <input type="text" id="setup-course-name" placeholder="לדוגמה: קביעת פגישה - מבוא לתכנות" required>
+        </div>
+        <div class="form-group">
+          <label>טווח תאריכים</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="date" id="setup-start" required>
+            <span>עד</span>
+            <input type="date" id="setup-end" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>ימים בשבוע</label>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:4px;">
+            <label><input type="checkbox" class="setup-day" value="0"> א׳</label>
+            <label><input type="checkbox" class="setup-day" value="1"> ב׳</label>
+            <label><input type="checkbox" class="setup-day" value="2"> ג׳</label>
+            <label><input type="checkbox" class="setup-day" value="3"> ד׳</label>
+            <label><input type="checkbox" class="setup-day" value="4"> ה׳</label>
+            <label><input type="checkbox" class="setup-day" value="5"> ו׳</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>שעות</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="setup-start-hour">
+              <option value="8">08:00</option><option value="9">09:00</option>
+              <option value="10">10:00</option><option value="11" selected>11:00</option>
+              <option value="12">12:00</option><option value="13">13:00</option>
+              <option value="14">14:00</option><option value="15">15:00</option>
+              <option value="16">16:00</option><option value="17">17:00</option>
+              <option value="18">18:00</option><option value="19">19:00</option>
+            </select>
+            <span>עד</span>
+            <select id="setup-end-hour">
+              <option value="8">08:00</option><option value="9">09:00</option>
+              <option value="10">10:00</option><option value="11">11:00</option>
+              <option value="12">12:00</option><option value="13">13:00</option>
+              <option value="14">14:00</option><option value="15">15:00</option>
+              <option value="16">16:00</option><option value="17">17:00</option>
+              <option value="18" selected>18:00</option><option value="19">19:00</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">✅ צור מועדים חדשים</button>
+      </form>
+    </div>
+
+    <!-- Reset panel -->
+    <div class="panel">
+      <h2 class="section-title">🗑️ איפוס מועדים</h2>
+      <p style="color:#666; margin-bottom:16px;">מחיקת כל הפגישות והמועדים הקיימים. הגדרות הקורס נשמרות.</p>
+      <button class="btn btn-danger" onclick="confirmReset()">אפס הכל</button>
+    </div>
+
+  </div>
+
   <div class="dashboard-grid">
 
     <!-- Left column: Calendar -->
@@ -137,10 +202,11 @@
   });
 
   async function loadData() {
-    const [userRes, slotsRes, bookingsRes] = await Promise.all([
+    const [userRes, slotsRes, bookingsRes, settingsRes] = await Promise.all([
       fetch('/api/me'),
       fetch('/api/slots/all'),
       fetch('/api/bookings/all'),
+      fetch('/api/slots/settings'),
     ]);
 
     const user = await userRes.json();
@@ -148,12 +214,74 @@
     if (user.role !== 'lecturer') { location.href = '/index.html'; return; }
     document.getElementById('user-name').textContent = user.name;
 
+    const settings = await settingsRes.json();
+    document.getElementById('setup-course-name').placeholder = settings.course_name;
+    const periodEl = document.querySelector('.section-title');
+    if (periodEl && settings.course_period) {
+      document.querySelectorAll('.section-title')[2].textContent = `לוח שעות – ${settings.course_period}`;
+    }
+
     const slots = await slotsRes.json();
     const bookings = await bookingsRes.json();
 
     renderCalendar(slots);
     renderBookingsList(bookings);
   }
+
+  function confirmReset() {
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').textContent = 'איפוס מועדים';
+    document.getElementById('modal-text').textContent = 'האם אתה בטוח? כל הפגישות והמועדים יימחקו. פעולה זו בלתי הפיכה.';
+    document.getElementById('modal-confirm').onclick = doReset;
+    modal.classList.add('active');
+  }
+
+  async function doReset() {
+    closeModal();
+    try {
+      const res = await fetch('/api/slots/reset', { method: 'DELETE' });
+      if (!res.ok) { showToast('שגיאה באיפוס', 'error'); return; }
+      showToast('האיפוס בוצע בהצלחה', 'success');
+      await loadData();
+    } catch { showToast('שגיאת רשת', 'error'); }
+  }
+
+  document.getElementById('setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const course_name = document.getElementById('setup-course-name').value.trim();
+    const start_date = document.getElementById('setup-start').value;
+    const end_date = document.getElementById('setup-end').value;
+    const days_of_week = [...document.querySelectorAll('.setup-day:checked')].map(el => parseInt(el.value));
+    const start_hour = parseInt(document.getElementById('setup-start-hour').value);
+    const end_hour = parseInt(document.getElementById('setup-end-hour').value);
+
+    if (!course_name || !start_date || !end_date || !days_of_week.length) {
+      showToast('יש למלא את כל השדות ולבחור לפחות יום אחד', 'error');
+      return;
+    }
+    if (start_date > end_date) { showToast('תאריך ההתחלה חייב להיות לפני הסיום', 'error'); return; }
+    if (start_hour > end_hour) { showToast('שעת ההתחלה חייבת להיות לפני הסיום', 'error'); return; }
+
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').textContent = 'אישור יצירת קורס חדש';
+    document.getElementById('modal-text').textContent = 'פעולה זו תמחק את כל המועדים והפגישות הקיימים ותצור מועדים חדשים. האם להמשיך?';
+    document.getElementById('modal-confirm').onclick = async () => {
+      closeModal();
+      try {
+        const res = await fetch('/api/slots/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ course_name, start_date, end_date, days_of_week, start_hour, end_hour }),
+        });
+        if (!res.ok) { const err = await res.json(); showToast(err.error || 'שגיאה', 'error'); return; }
+        const data = await res.json();
+        showToast(`נוצרו ${data.slots_created} מועדים חדשים!`, 'success');
+        e.target.reset();
+        await loadData();
+      } catch { showToast('שגיאת רשת', 'error'); }
+    };
+    modal.classList.add('active');
+  });
 
   function renderCalendar(slots) {
     const container = document.getElementById('calendar');

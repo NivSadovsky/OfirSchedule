@@ -55,6 +55,20 @@ async function initDB() {
       )
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key VARCHAR(255) PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
+
+    await client.query(`
+      INSERT INTO settings (key, value) VALUES
+        ('course_name', 'קביעת פגישה עם המרצה'),
+        ('course_period', 'אפריל 2026')
+      ON CONFLICT DO NOTHING
+    `);
+
     await client.query('COMMIT');
 
     // Seed slots if empty

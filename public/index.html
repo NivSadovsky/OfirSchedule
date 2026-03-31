@@ -39,7 +39,7 @@
     <button class="btn btn-secondary" onclick="cancelReschedule()">ביטול</button>
   </div>
 
-  <h2 class="section-title">מועדים פנויים – אפריל 2026</h2>
+  <h2 class="section-title" id="section-title">מועדים פנויים</h2>
 
   <div class="legend">
     <div class="legend-item">
@@ -111,10 +111,11 @@
   }
 
   async function loadData() {
-    const [userRes, slotsRes, bookingRes] = await Promise.all([
+    const [userRes, slotsRes, bookingRes, settingsRes] = await Promise.all([
       fetch('/api/me'),
       fetch('/api/slots/available'),
       fetch('/api/bookings/my'),
+      fetch('/api/slots/settings'),
     ]);
 
     currentUser = await userRes.json();
@@ -122,6 +123,10 @@
     if (currentUser.role === 'lecturer') { location.href = '/lecturer.html'; return; }
 
     document.getElementById('user-name').textContent = currentUser.name;
+
+    const settings = await settingsRes.json();
+    const period = settings.course_period ? ` – ${settings.course_period}` : '';
+    document.getElementById('section-title').textContent = `${settings.course_name}${period}`;
 
     const available = await slotsRes.json();
     myBooking = await bookingRes.json();
